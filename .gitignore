@@ -1,0 +1,27 @@
+# .gitignore — NexoEscolar
+
+# ─── Node.js ──────────────────────────────────
+node_modules/
+dist/
+build/
+
+# ─── Variáveis de ambiente ────────────────────
+.env
+.env.local
+.env.*.local
+
+# ─── Prisma ───────────────────────────────────
+# Manter o schema.prisma; ignorar geração e migrations locais temporárias
+backend/src/infrastructure/prisma/migrations/
+
+# ─── Logs ─────────────────────────────────────
+*.log
+npm-debug.log*
+yarn-debug.log*
+
+# ─── Editores e SOs ───────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/
+*.suo
+*.user

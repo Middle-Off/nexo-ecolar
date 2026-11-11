@@ -1,0 +1,160 @@
+// schema.prisma
+// Esquema físico do banco de dados — NexoEscolar
+// Banco: PostgreSQL | ORM: Prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum Perfil {
+  ADMIN
+  PROFESSOR
+  ALUNO
+  RESPONSAVEL
+}
+
+enum StatusMatricula {
+  ATIVA
+  TRANCADA
+  CONCLUIDA
+  CANCELADA
+}
+
+enum StatusFrequencia {
+  PRESENTE
+  AUSENTE
+  JUSTIFICADA
+}
+
+// ─── Modelos Principais ───────────────────────────────────────────────────────
+
+/// Usuário unificado: professores, alunos e administradores compartilham
+/// a mesma tabela, diferenciados pelo campo `perfil`.
+model Usuario {
+  id           String    @id @default(uuid())
+  nome         String
+  email        String    @unique
+  senhaHash    String    @map("senha_hash")
+  perfil       Perfil
+  criadoEm    DateTime  @default(now()) @map("criado_em")
+  atualizadoEm DateTime  @updatedAt @map("atualizado_em")
+
+  // Relacionamentos
+  matriculas   Matricula[]        // Alunos possuem matrículas
+  aulasCriadas Aula[]             // Professores criam aulas
+  turmasProfessor TurmaDisciplina[] // Professores são atribuídos a turmas/disciplinas
+
+  @@map("usuarios")
+}
+
+/// Turma: agrupa alunos de um mesmo ano/série/período.
+model Turma {
+  id           String    @id @default(uuid())
+  nome         String    // Ex: "9º Ano A", "3ª Série B"
+  anoLetivo    Int       @map("ano_letivo")
+  criadoEm    DateTime  @default(now()) @map("criado_em")
+  atualizadoEm DateTime  @updatedAt @map("atualizado_em")
+
+  // Relacionamentos
+  matriculas         Matricula[]
+  turmasDisciplinas  TurmaDisciplina[]
+
+  @@map("turmas")
+}
+
+/// Disciplina: matéria curricular (ex: Matemática, Português).
+model Disciplina {
+  id           String    @id @default(uuid())
+  nome         String
+  cargaHoraria Int       @map("carga_horaria") // Total de horas/aulas previstas
+  criadoEm    DateTime  @default(now()) @map("criado_em")
+  atualizadoEm DateTime  @updatedAt @map("atualizado_em")
+
+  // Relacionamentos
+  turmasDisciplinas  TurmaDisciplina[]
+
+  @@map("disciplinas")
+}
+
+/// Tabela de junção entre Turma, Disciplina e Professor responsável.
+/// Representa "qual professor ministra qual disciplina em qual turma".
+model TurmaDisciplina {
+  id           String     @id @default(uuid())
+  turmaId      String     @map("turma_id")
+  disciplinaId String     @map("disciplina_id")
+  professorId  String     @map("professor_id")
+  criadoEm    DateTime   @default(now()) @map("criado_em")
+
+  // Relacionamentos
+  turma      Turma      @relation(fields: [turmaId], references: [id])
+  disciplina Disciplina @relation(fields: [disciplinaId], references: [id])
+  professor  Usuario    @relation(fields: [professorId], references: [id])
+  aulas      Aula[]
+
+  @@unique([turmaId, disciplinaId, professorId])
+  @@map("turmas_disciplinas")
+}
+
+/// Matrícula: vínculo formal de um Aluno a uma Turma em determinado ano letivo.
+model Matricula {
+  id        String          @id @default(uuid())
+  alunoId   String          @map("aluno_id")
+  turmaId   String          @map("turma_id")
+  status    StatusMatricula @default(ATIVA)
+  criadoEm DateTime         @default(now()) @map("criado_em")
+  atualizadoEm DateTime     @updatedAt @map("atualizado_em")
+
+  // Relacionamentos
+  usuario    Usuario    @relation(fields: [alunoId], references: [id])
+  turma      Turma      @relation(fields: [turmaId], references: [id])
+  frequencias Frequencia[]
+
+  @@unique([alunoId, turmaId]) // Um aluno só pode ter uma matrícula ativa por turma
+  @@map("matriculas")
+}
+
+/// Aula: registro de uma aula ministrada (data, turma, disciplina, professor).
+/// É a unidade central à qual a chamada/frequência é vinculada.
+model Aula {
+  id               String          @id @default(uuid())
+  turmaDisciplinaId String         @map("turma_disciplina_id")
+  professorId      String          @map("professor_id")
+  data             DateTime        // Data e hora de início da aula
+  conteudo         String?         // Conteúdo/tema da aula (opcional)
+  criadoEm        DateTime        @default(now()) @map("criado_em")
+  atualizadoEm    DateTime        @updatedAt @map("atualizado_em")
+
+  // Relacionamentos
+  turmaDisciplina TurmaDisciplina @relation(fields: [turmaDisciplinaId], references: [id])
+  professor       Usuario         @relation(fields: [professorId], references: [id])
+  frequencias     Frequencia[]
+
+  @@map("aulas")
+}
+
+/// Frequência: registro do status de presença de um aluno em uma aula específica.
+/// É o coração do módulo de chamada — gerada pelo AttendanceSession e
+/// persistida pelo PrismaAttendanceRepository.
+model Frequencia {
+  id           String           @id @default(uuid())
+  aulaId       String           @map("aula_id")
+  matriculaId  String           @map("matricula_id")
+  status       StatusFrequencia @default(AUSENTE)
+  criadoEm    DateTime         @default(now()) @map("criado_em")
+  atualizadoEm DateTime         @updatedAt @map("atualizado_em")
+
+  // Relacionamentos
+  aula     Aula      @relation(fields: [aulaId], references: [id])
+  matricula Matricula @relation(fields: [matriculaId], references: [id])
+
+  // Chave única composta: impede duplicidade no banco (complementa a regra da entidade)
+  @@unique([aulaId, matriculaId], name: "aulaId_matriculaId")
+  @@map("frequencias")
+}
